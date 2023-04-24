@@ -1,17 +1,93 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="styles.css">
   <title>Vanilla JavaScript App</title>
 </head>
-
 <body>
   <main>
     <h1>Vanilla JavaScript App</h1>
   </main>
+  <script src="https://unpkg.com/@azure/ms-rest-js"></script>
+  <script src="https://unpkg.com/@azure/cognitiveservices-computervision"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sharp"></script>
+
+  <script>
+    const {
+  ComputerVisionClient,
+} = require('@azure/cognitiveservices-computervision');
+const { CognitiveServicesCredentials } = require('@azure/ms-rest-js');
+const sharp = require('sharp');
+const fs = require('fs');
+const path = require('path');
+
+const subscriptionKey = 'bfeba954de8f417abaf31f3431231dc8';
+const endpoint = 'https://shreyascomputervision.cognitiveservices.azure.com/';
+
+const computervisionClient = new ComputerVisionClient(
+  new CognitiveServicesCredentials(subscriptionKey),
+  endpoint
+);
+
+const inputFolder = './SampleImages';
+const outputFolder = './OutImages';
+
+if (!fs.existsSync(outputFolder)) {
+  fs.mkdirSync(outputFolder);
+}
+
+fs.readdir(inputFolder, async (err, files) => {
+  if (err) {
+    console.error('Error reading the input folder:', err);
+    return;
+  }
+
+  for (const file of files) {
+    console.log(file);
+    const filePath = path.join(inputFolder, file);
+    const outFile = path.join(outputFolder, file);
+
+    const imageBuffer = fs.readFileSync(filePath);
+
+    try {
+      const result = await computervisionClient.detectObjectsInStream(
+        imageBuffer
+      );
+
+      const image = sharp(imageBuffer);
+
+      for (const object of result.objects) {
+        const left = object.rectangle.x;
+        const top = object.rectangle.y;
+        const width = object.rectangle.w;
+        const height = object.rectangle.h;
+
+        const text = `${object.objectProperty} (${object.confidence * 100}%)`;
+
+        image
+          .composite([
+            {
+              input: Buffer.from(
+                `<svg height="${height}" width="${width}">
+                  <rect x="0" y="0" width="${width}" height="${height}" style="stroke:red;stroke-width:5;fill:none" />
+                  <text x="5" y="${height - 30}" font-size="16" fill="red" font-family="Arial">${text}</text>
+                </svg>`
+              ),
+              left: left,
+              top: top,
+            },
+          ])
+          .toFile(outFile);
+      }
+    } catch (error) {
+      console.error('Error processing the image:', error);
+    }
+  }
+});
+  </script>
+
 </body>
 
 </html>
