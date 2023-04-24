@@ -4,9 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Vanilla JavaScript App</title>
-  <script src="https://unpkg.com/@azure/ms-rest-js"></script>
-  <script src="https://unpkg.com/@azure/cognitiveservices-computervision"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/sharp/0.29.3/sharp.min.js" integrity="sha512-/ilxZU6lKU6X2U6/1U6kc+0jZw0G7Oz6LrUx+IATy5NfOLN+jD+FAp5D5O5ZMz5q3jJZ0EDbcBROQ+b5Y5yj9g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 </head>
 <body>
   <main>
@@ -16,23 +13,29 @@
   </main>
 
   <script>
-    const {
-      ComputerVisionClient,
-    } = window.ComputerVision;
-    const { CognitiveServicesCredentials } = window.MsRest;
-    const sharp = window.sharp;
-
     const subscriptionKey = 'bfeba954de8f417abaf31f3431231dc8';
-    const endpoint = 'https://shreyascomputervision.cognitiveservices.azure.com/';
-
-    const computervisionClient = new ComputerVisionClient(
-      new CognitiveServicesCredentials(subscriptionKey),
-      endpoint
-    );
+    const endpoint = 'https://shreyascomputervision.cognitiveservices.azure.com/vision/v3.2/analyze';
 
     const inputFile = document.getElementById('inputFile');
     inputFile.addEventListener('change', handleFiles, false);
     const outputImages = document.getElementById('outputImages');
+
+    async function analyzeImage(imageBuffer) {
+      const response = await fetch(endpoint + '?visualFeatures=Objects', {
+        method: 'POST',
+        body: new Blob([imageBuffer], { type: 'application/octet-stream' }),
+        headers: {
+          'Ocp-Apim-Subscription-Key': subscriptionKey,
+          'Content-Type': 'application/octet-stream',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`An error occurred: ${response.statusText}`);
+      }
+
+      return await response.json();
+    }
 
     async function handleFiles(event) {
       const fileList = event.target.files;
@@ -41,40 +44,34 @@
         const imageBuffer = await file.arrayBuffer();
 
         try {
-          const result = await computervisionClient.detectObjectsInStream(
-            new Blob([imageBuffer])
-          );
+          const result = await analyzeImage(imageBuffer);
 
-          const image = sharp(imageBuffer);
+          const img = new Image();
+          img.src = URL.createObjectURL(new Blob([imageBuffer], { type: 'image/png' }));
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
 
-          for (const object of result.objects) {
-            const left = object.rectangle.x;
-            const top = object.rectangle.y;
-            const width = object.rectangle.w;
-            const height = object.rectangle.h;
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 5;
 
-            const text = `${object.objectProperty} (${object.confidence * 100}%)`;
+            for (const object of result.objects) {
+              const left = object.rectangle.x;
+              const top = object.rectangle.y;
+              const width = object.rectangle.w;
+              const height = object.rectangle.h;
 
-            await image
-              .composite([
-                {
-                  input: Buffer.from(
-                    `<svg height="${height}" width="${width}">
-                      <rect x="0" y="0" width="${width}" height="${height}" style="stroke:red;stroke-width:5;fill:none" />
-                      <text x="5" y="${height - 30}" font-size="16" fill="red" font-family="Arial">${text}</text>
-                    </svg>`
-                  ),
-                  left: left,
-                  top: top,
-                },
-              ])
-              .toBuffer()
-              .then(data => {
-                const img = new Image();
-                img.src = URL.createObjectURL(new Blob([data], { type: 'image/png' }));
-                outputImages.appendChild(img);
-              });
-          }
+              ctx.strokeRect(left, top, width, height);
+              ctx.font = '16px Arial';
+              ctx.fillStyle = 'red';
+              ctx.fillText(`${object.objectProperty} (${object.confidence * 100}%)`, left + 5, top + height - 30);
+            }
+
+            outputImages.appendChild(canvas);
+          };
         } catch (error) {
           console.error('Error processing the image:', error);
         }
